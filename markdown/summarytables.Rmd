@@ -1,0 +1,433 @@
+---
+title: "Summary Tables"
+output: md_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, options(scipen=999))
+
+library(knitr)
+
+today = "2024-07-10" #reupdated
+
+library(glue)
+
+# code.path <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+# data.path <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+# row.data.file <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+
+load(glue("{code.path}patient_data_{today}.rda"))
+load(glue("{code.path}backup_data_{today}.rda"))
+#load(glue("{code.path}time_series_data_{today}.rda"))
+
+N <- nrow(patient.data)
+
+sex.male <- sum(patient.data$sex == 1, na.rm = TRUE)
+sex.female <- sum(patient.data$sex == 2, na.rm = TRUE)
+sex.unknown <- N - sex.male - sex.female
+
+median.age <- median(patient.data$age_estimateyears, na.rm = TRUE)
+min.age <- min(patient.data$age_estimateyears, na.rm = TRUE)
+max.age <- max(patient.data$age_estimateyears, na.rm = TRUE)
+
+n.deaths <- sum(patient.data$exit.code == "death", na.rm=TRUE)
+n.recovered <- sum(patient.data$exit.code == "discharge", na.rm=TRUE)
+n.inhospital <- sum(patient.data$exit.code == "hospitalisation", na.rm=TRUE) #still in hospital
+n.transfer <- sum(patient.data$exit.code == "transfer", na.rm=TRUE)
+n.palliative <- sum(patient.data$exit.code == "transfer.palliative", na.rm=TRUE)
+n.unknown <- N - (n.deaths + n.recovered + n.inhospital + n.transfer + n.palliative)
+
+# Calculate counts for each outcome category within each age group
+outcome.age <- patient.data %>%
+  group_by(agegp10) %>%
+  dplyr::summarise(
+    Discharge = sum(exit.code == "discharge", na.rm = TRUE),
+    Death = sum(exit.code == "death", na.rm = TRUE),
+    Transfer = sum(exit.code == "transfer", na.rm = TRUE),
+    Palliative = sum(exit.code == "transfer.palliative", na.rm = TRUE),
+    Hospitalization = sum(exit.code == "hospitalisation", na.rm = TRUE),
+    Unknown = sum(is.na(exit.code) | exit.code == "unknown", na.rm = TRUE) # Calculate "Unknown"
+  )
+
+# Calculate counts for each outcome category within each sex group
+outcome.sex <- patient.data %>%
+  group_by(sex) %>%
+  dplyr::summarise(
+    Discharge = sum(exit.code == "discharge", na.rm = TRUE),
+    Death = sum(exit.code == "death", na.rm = TRUE),
+    Transfer = sum(exit.code == "transfer", na.rm = TRUE),
+    Palliative = sum(exit.code == "transfer.palliative", na.rm = TRUE),
+    Hospitalization = sum(exit.code == "hospitalisation", na.rm = TRUE),
+    Unknown = sum(is.na(exit.code) | exit.code == "unknown", na.rm = TRUE) # Calculate "Unknown"
+  )
+
+#symptoms prevalence
+n.symptoms <- data.frame(
+  Field = character(0),
+  Label = character(0),
+  Present = numeric(0),
+  Absent = numeric(0),
+  Unknown = numeric(0)
+)
+# Iterate through each symptom
+for (i in 1:nrow(admission.symptoms)) {
+  field <- admission.symptoms$field[i]
+  label <- admission.symptoms$label[i]
+  symptom <- patient.data[, field]
+  present <- sum(symptom == 1, na.rm = TRUE)
+  absent <- sum(symptom == 2, na.rm = TRUE)
+  unknown <- sum(is.na(symptom) | symptom == 3, na.rm = TRUE)
+  n.symptoms <- rbind(n.symptoms, c(field, label, present, absent, unknown))
+}
+colnames(n.symptoms) <- c("Field", "Label", "Present", "Absent", "Unknown")
+n.symptoms <- n.symptoms[order(n.symptoms$Field), ]
+rownames(n.symptoms) <- NULL
+
+n.symptoms <- n.symptoms %>% mutate (
+  Present = as.numeric(Present),
+  Absent = as.numeric(Absent),
+  Unknown = as.numeric(Unknown),
+)
+
+#comorbidities prevalence
+comorbs <- comorbidities %>%
+  mutate(
+    label = case_when(
+      field == "chroniccard_mhyn" ~ "Chronic Cardiac Disease",
+      field == "hypertension_mhyn" ~ "Hypertension",
+      field == "chronicpul_mhyn" ~ "Chronic Pulmonary Disease",
+      field == "asthma_mhyn" ~ "Asthma",
+      field == "renal_mhyn" ~ "Chronic Kidney Disease",
+      field == "obesity_mhyn" ~ "Obesity",
+      field == "chronicneu_mhyn" ~ "Chronic Neurological Disorder",
+      field == "malignantneo_mhyn" ~ "Malignant Neoplasm",
+      field == "chronhaemo_mhyn" ~ "Chronic Hematologic Disease",
+      field == "aidshiv_mhyn" ~ "AIDS/HIV",
+      field == "dementia_mhyn" ~ "Dementia",
+      field == "malnutrition_mhyn" ~ "Malnutrition",
+      field == "smoking_mhyn" ~ "Smoking",
+      field == "other_mhyn" ~ "Other Comorbidity",
+      field == "pregnancy" ~ "Pregnancy",
+      field == "liver.disease" ~ "Liver Disease",
+      field == "diabetes" ~ "Diabetes",
+      TRUE ~ field
+    )
+  )
+n.comorbs <- data.frame(
+  Field = character(0),
+  Label = character(0),
+  Present = numeric(0),
+  Absent = numeric(0),
+  Unknown = numeric(0)
+)
+# Iterate through each symptom
+for (i in 1:nrow(comorbs)) {
+  field <- comorbs$field[i]
+  label <- comorbs$label[i]
+  comorb <- patient.data[, field]
+  present <- sum(comorb == 1, na.rm = TRUE)
+  absent <- sum(comorb == 2 | comorb == 3, na.rm = TRUE)
+  unknown <- sum(is.na(comorb) | comorb == 4, na.rm = TRUE)
+  n.comorbs <- rbind(n.comorbs, c(field, label, present, absent, unknown))
+}
+colnames(n.comorbs) <- c("Field", "Label", "Present", "Absent", "Unknown")
+n.comorbs <- n.comorbs[order(n.comorbs$Field), ]
+rownames(n.comorbs) <- NULL
+
+n.comorbs <- n.comorbs %>% mutate (
+  Present = as.numeric(Present),
+  Absent = as.numeric(Absent),
+  Unknown = as.numeric(Unknown),
+)
+
+#treatments are NA int he patient data so retrieve them from the dataset...
+treats.data <- backup.data %>%
+  group_by(subjid) %>%
+  dplyr::summarise(
+    extracorp_prtrt = if(all(is.na(extracorp_prtrt))) NA else min(extracorp_prtrt, na.rm = TRUE),
+    icu_hoterm = if(all(is.na(icu_hoterm))) NA else min(icu_hoterm, na.rm = TRUE),
+    inhalednit_cmtrt = if(all(is.na(inhalednit_cmtrt))) NA else min(inhalednit_cmtrt, na.rm = TRUE),
+    inotrop_cmtrt = if(all(is.na(inotrop_cmtrt))) NA else min(inotrop_cmtrt, na.rm = TRUE),
+    invasive_proccur = if(all(is.na(invasive_proccur))) NA else min(invasive_proccur, na.rm = TRUE),
+    noninvasive_proccur = if(all(is.na(noninvasive_proccur))) NA else min(noninvasive_proccur, na.rm = TRUE),
+    othertx_cmyn = if(all(is.na(othertx_cmyn))) NA else min(othertx_cmyn, na.rm = TRUE),
+    oxygen_cmoccur = if(all(is.na(oxygen_cmoccur))) NA else min(oxygen_cmoccur, na.rm = TRUE),
+    pronevent_prtrt = if(all(is.na(pronevent_prtrt))) NA else min(pronevent_prtrt, na.rm = TRUE),
+    rrt_prtrt = if(all(is.na(rrt_prtrt))) NA else min(rrt_prtrt, na.rm = TRUE),
+    tracheo_prtrt = if(all(is.na(tracheo_prtrt))) NA else min(tracheo_prtrt, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+#treatments prevalence
+treats <- treatments %>%
+  mutate(
+    label = case_when(
+      field == "oxygen_cmoccur" ~ "Oxygen Therapy",
+      field == "noninvasive_proccur" ~ "Non-invasive Ventilation",
+      field == "invasive_proccur" ~ "Invasive Ventilation",
+      field == "pronevent_prtrt" ~ "Prone Ventilation",
+      field == "inhalednit_cmtrt" ~ "Off-label / Compassionate Use Medications",
+      field == "tracheo_prtrt" ~ "Tracheostomy Inserted",
+      field == "extracorp_prtrt" ~ "Extracorporeal Support",
+      field == "rrt_prtrt" ~ "Nasal / Mask Oxygen Therapy",
+      field == "inotrop_cmtrt" ~ "High Flow Oxygen Therapy",
+      field == "icu_hoterm" ~ "ICU or High Dependency Unit Admission",
+      field == "other_cmyn" ~ "Other Intervention / Procedure",
+      TRUE ~ field
+    )
+  ) %>%
+  mutate(field = ifelse(field == "other_cmyn", "othertx_cmyn", field))
+
+n.treats <- data.frame(
+  Field = character(0),
+  Label = character(0),
+  Present = numeric(0),
+  Absent = numeric(0),
+  Unknown = numeric(0)
+)
+# Iterate through each treatment
+for (i in 1:nrow(treats)) {
+  field <- treats$field[i]
+  label <- treats$label[i]
+  treat <- treats.data[, field]
+  present <- sum(treat == 1, na.rm = TRUE)
+  absent <- sum(treat == 2 | treat == 3, na.rm = TRUE)
+  unknown <- sum(is.na(treat) | treat == 4, na.rm = TRUE)
+  n.treats <- rbind(n.treats, c(field, label, present, absent, unknown))
+}
+colnames(n.treats) <- c("Field", "Label", "Present", "Absent", "Unknown")
+n.treats <- n.treats[order(n.treats$Field), ]
+rownames(n.treats) <- NULL
+
+n.treats <- n.treats %>% mutate (
+  Present = as.numeric(Present),
+  Absent = as.numeric(Absent),
+  Unknown = as.numeric(Unknown))
+
+#1. Length of hospital stay (admission to exit)
+hosp.mean <- mean(patient.data$admission.to.exit, na.rm = TRUE)
+hosp.sd <- sd(patient.data$admission.to.exit, na.rm = TRUE)
+hosp.median <- median(patient.data$admission.to.exit, na.rm = TRUE)
+hosp.iqr <- IQR(patient.data$admission.to.exit, na.rm = TRUE)
+hosp.obs <- sum(!is.na(patient.data$admission.to.exit))
+
+
+#2.Symptom onset to admission
+onset.adm.mean <- mean(patient.data$onset.to.admission, na.rm = TRUE)
+onset.adm.sd <- sd(patient.data$onset.to.admission, na.rm = TRUE)
+onset.adm.median <- median(patient.data$onset.to.admission, na.rm = TRUE)
+onset.adm.iqr <- IQR(patient.data$onset.to.admission, na.rm = TRUE)
+onset.adm.obs <- sum(!is.na(patient.data$onset.to.admission))
+
+#3. Admission to icu entry
+adm.icu.mean <- mean(patient.data$admission.to.ICU, na.rm = TRUE)
+adm.icu.sd <- sd(patient.data$admission.to.ICU, na.rm = TRUE)
+adm.icu.median <- median(patient.data$admission.to.ICU, na.rm = TRUE)
+adm.icu.iqr <- IQR(patient.data$admission.to.ICU, na.rm = TRUE)
+adm.icu.obs <- sum(!is.na(patient.data$admission.to.ICU))
+
+#4. Duration of ICU
+dur.icu.mean <- mean(patient.data$ICU.duration, na.rm = TRUE)
+dur.icu.sd <- sd(patient.data$ICU.duration, na.rm = TRUE)
+dur.icu.median <- median(patient.data$ICU.duration, na.rm = TRUE)
+dur.icu.iqr <- IQR(patient.data$ICU.duration, na.rm = TRUE)
+dur.icu.obs <- sum(!is.na(patient.data$ICU.duration))
+
+#5. Admission to IMV
+adm.imv.mean <- mean(patient.data$admission.to.IMV, na.rm = TRUE)
+adm.imv.sd <- sd(patient.data$admission.to.IMV, na.rm = TRUE)
+adm.imv.median <- median(patient.data$admission.to.IMV, na.rm = TRUE)
+adm.imv.iqr <- IQR(patient.data$admission.to.IMV, na.rm = TRUE)
+adm.imv.obs <- sum(!is.na(patient.data$admission.to.IMV))
+
+#6. Duration of IMV
+dur.imv.mean <- mean(patient.data$IMV.duration, na.rm = TRUE)
+dur.imv.sd <- sd(patient.data$IMV.duration, na.rm = TRUE)
+dur.imv.median <- median(patient.data$IMV.duration, na.rm = TRUE)
+dur.imv.iqr <- IQR(patient.data$IMV.duration, na.rm = TRUE)
+dur.imv.obs <- sum(!is.na(patient.data$IMV.duration))
+
+
+#7. Admission to NIV
+adm.niv.mean <- mean(patient.data$admission.to.NIMV, na.rm = TRUE)
+adm.niv.sd <- sd(patient.data$admission.to.NIMV, na.rm = TRUE)
+adm.niv.median <- median(patient.data$admission.to.NIMV, na.rm = TRUE)
+adm.niv.iqr <- IQR(patient.data$admission.to.NIMV, na.rm = TRUE)
+adm.niv.obs <- sum(!is.na(patient.data$admission.to.NIMV))
+
+#8. DUration of NIV
+dur.niv.mean <- mean(patient.data$NIMV.duration, na.rm = TRUE)
+dur.niv.sd <- sd(patient.data$NIMV.duration, na.rm = TRUE)
+dur.niv.median <- median(patient.data$NIMV.duration, na.rm = TRUE)
+dur.niv.iqr <- IQR(patient.data$NIMV.duration, na.rm = TRUE)
+dur.niv.obs <- sum(!is.na(patient.data$NIMV.duration))
+
+count.icu <- sum(!is.na(patient.data$ICU.start.date))
+no.unknown.icu <- N - count.icu
+
+```
+
+**Table 1:** Patient Characteristics
+
+| **Description**                  | **Value**                                      |
+|-------------------------------|--------------------------------------------|
+| Size of cohort                | `r N`                            |
+|                               |                                            |
+| **By sex**                       |                                            |
+| Male                          | `r sex.male` (`r round(sex.male/N, 2)`)                            |
+| Female                        | `r sex.female` (`r round(sex.female/N, 2)`)                           |
+| Unknown                       | `r sex.unknown` (`r 1-round(sex.male/N, 2)-round(sex.female/N, 2)`)                     |
+|                               |                                            |
+| **By outcome status**                    |                                            |
+| Dead                          | `r n.deaths` (`r round(n.deaths/N, 2)`) |
+| Recovered (Discharged Alive)  | `r n.recovered` (`r round(n.recovered/N, 2)`)                          |
+| Still in Hospital             |  `r n.inhospital` (`r round(n.inhospital/N, 2)`)                            |
+| Transferred to Other Facility |  `r n.transfer` (`r round(n.transfer/N, 2)`)                      |
+| Palliative Discharge          |  `r n.palliative` (`r round(n.palliative/N, 2)`)                      |
+| Unknown                         | `r n.unknown` (`r round(n.unknown/N, 2)`)
+|                               |                                           |
+| **By age group**                 |                                            |
+| `r levels(patient.data$agegp10)[1]` | `r summary(patient.data$agegp10)[[1]]` (`r round(summary(patient.data$agegp10)[[1]]/N, 2)`)         |
+| `r levels(patient.data$agegp10)[2]` | `r summary(patient.data$agegp10)[[2]]` (`r round(summary(patient.data$agegp10)[[2]]/N, 2)`)              |
+| `r levels(patient.data$agegp10)[3]` | `r summary(patient.data$agegp10)[[3]]` (`r round(summary(patient.data$agegp10)[[3]]/N, 2)`)              |
+| `r levels(patient.data$agegp10)[4]` | `r summary(patient.data$agegp10)[[4]]` (`r round(summary(patient.data$agegp10)[[4]]/N, 2)`)              |
+| `r levels(patient.data$agegp10)[5]` | `r summary(patient.data$agegp10)[[5]]` (`r round(summary(patient.data$agegp10)[[5]]/N, 2)`)              |
+| `r levels(patient.data$agegp10)[6]` | `r summary(patient.data$agegp10)[[6]]` (`r round(summary(patient.data$agegp10)[[6]]/N, 2)`)              |
+| `r levels(patient.data$agegp10)[7]` | `r summary(patient.data$agegp10)[[7]]` (`r round(summary(patient.data$agegp10)[[7]]/N, 2)`)              |
+| `r levels(patient.data$agegp10)[8]` | `r summary(patient.data$agegp10)[[8]]` (`r round(summary(patient.data$agegp10)[[8]]/N, 2)`)             |
+| Unknown | `r N - sum(summary(patient.data$agegp10))` (`r round((N - sum(summary(patient.data$agegp10)))/N, 2)`) |
+|                               |                                           |
+| **Admitted to ICU/HDU?**     |                                  |
+|  Yes                          |       `r count.icu` (`r round(count.icu/N, 2)`)                            |
+|  No/Unknown                           |    `r no.unknown.icu` (`r round(no.unknown.icu/N, 2)`)                                  |
+|                               |                                  |
+
+---
+
+**Table 2:** Outcome by age and sex. Proportions are calculated using the column total as the denominator.
+
+| Variable | **Still in hospital** | **Death** | **Discharge** | **Transferred** | **Palliative Discharge** | **Unknown** |
+|----------|-----------------------|-----------|---------------|------------------|--------------------------|-------------|
+| **Age**  |                       |           |               |                  |                          |             |
+| `r levels(patient.data$agegp10)[1]` | `r outcome.age[1, "Hospitalization"]` (`r round(outcome.age[1, "Hospitalization"]/n.inhospital, 2)`) | `r outcome.age[1, "Death"]` (`r round(outcome.age[1, "Death"]/n.deaths, 2)`) | `r outcome.age[1, "Discharge"]` (`r round(outcome.age[1, "Discharge"]/n.recovered, 2)`) | `r outcome.age[1, "Transfer"]` (`r round(outcome.age[1, "Transfer"]/n.transfer, 2)`) | `r outcome.age[1, "Palliative"]` (`r round(outcome.age[1, "Palliative"]/n.palliative, 2)`) | `r outcome.age[1, "Unknown"]` (`r round(outcome.age[1, "Unknown"]/n.unknown, 2)`) |
+| `r levels(patient.data$agegp10)[2]` | `r outcome.age[2, "Hospitalization"]` (`r round(outcome.age[2, "Hospitalization"]/n.inhospital, 2)`) | `r outcome.age[2, "Death"]` (`r round(outcome.age[2, "Death"]/n.deaths, 2)`) | `r outcome.age[2, "Discharge"]` (`r round(outcome.age[2, "Discharge"]/n.recovered, 2)`) | `r outcome.age[2, "Transfer"]` (`r round(outcome.age[2, "Transfer"]/n.transfer, 2)`) | `r outcome.age[2, "Palliative"]` (`r round(outcome.age[2, "Palliative"]/n.palliative, 2)`) | `r outcome.age[2, "Unknown"]` (`r round(outcome.age[2, "Unknown"]/n.unknown, 2)`) |
+| `r levels(patient.data$agegp10)[3]` | `r outcome.age[3, "Hospitalization"]` (`r round(outcome.age[3, "Hospitalization"]/n.inhospital, 2)`) | `r outcome.age[3, "Death"]` (`r round(outcome.age[3, "Death"]/n.deaths, 2)`) | `r outcome.age[3, "Discharge"]` (`r round(outcome.age[3, "Discharge"]/n.recovered, 2)`) | `r outcome.age[3, "Transfer"]` (`r round(outcome.age[3, "Transfer"]/n.transfer, 2)`) | `r outcome.age[3, "Palliative"]` (`r round(outcome.age[3, "Palliative"]/n.palliative, 2)`) | `r outcome.age[3, "Unknown"]` (`r round(outcome.age[3, "Unknown"]/n.unknown, 2)`) |
+| `r levels(patient.data$agegp10)[4]` | `r outcome.age[4, "Hospitalization"]` (`r round(outcome.age[4, "Hospitalization"]/n.inhospital, 2)`) | `r outcome.age[4, "Death"]` (`r round(outcome.age[4, "Death"]/n.deaths, 2)`) | `r outcome.age[4, "Discharge"]` (`r round(outcome.age[4, "Discharge"]/n.recovered, 2)`) | `r outcome.age[4, "Transfer"]` (`r round(outcome.age[4, "Transfer"]/n.transfer, 2)`) | `r outcome.age[4, "Palliative"]` (`r round(outcome.age[4, "Palliative"]/n.palliative, 2)`) | `r outcome.age[4, "Unknown"]` (`r round(outcome.age[4, "Unknown"]/n.unknown, 2)`) |
+| `r levels(patient.data$agegp10)[5]` | `r outcome.age[5, "Hospitalization"]` (`r round(outcome.age[5, "Hospitalization"]/n.inhospital, 2)`) | `r outcome.age[5, "Death"]` (`r round(outcome.age[5, "Death"]/n.deaths, 2)`) | `r outcome.age[5, "Discharge"]` (`r round(outcome.age[5, "Discharge"]/n.recovered, 2)`) | `r outcome.age[5, "Transfer"]` (`r round(outcome.age[5, "Transfer"]/n.transfer, 2)`) | `r outcome.age[5, "Palliative"]` (`r round(outcome.age[5, "Palliative"]/n.palliative, 2)`) | `r outcome.age[5, "Unknown"]` (`r round(outcome.age[5, "Unknown"]/n.unknown, 2)`) |
+| `r levels(patient.data$agegp10)[6]` | `r outcome.age[6, "Hospitalization"]` (`r round(outcome.age[6, "Hospitalization"]/n.inhospital, 2)`) | `r outcome.age[6, "Death"]` (`r round(outcome.age[6, "Death"]/n.deaths, 2)`) | `r outcome.age[6, "Discharge"]` (`r round(outcome.age[6, "Discharge"]/n.recovered, 2)`) | `r outcome.age[6, "Transfer"]` (`r round(outcome.age[6, "Transfer"]/n.transfer, 2)`) | `r outcome.age[6, "Palliative"]` (`r round(outcome.age[6, "Palliative"]/n.palliative, 2)`) | `r outcome.age[6, "Unknown"]` (`r round(outcome.age[6, "Unknown"]/n.unknown, 2)`) |
+| `r levels(patient.data$agegp10)[7]` | `r outcome.age[7, "Hospitalization"]` (`r round(outcome.age[7, "Hospitalization"]/n.inhospital, 2)`) | `r outcome.age[7, "Death"]` (`r round(outcome.age[7, "Death"]/n.deaths, 2)`) | `r outcome.age[7, "Discharge"]` (`r round(outcome.age[7, "Discharge"]/n.recovered, 2)`) | `r outcome.age[7, "Transfer"]` (`r round(outcome.age[7, "Transfer"]/n.transfer, 2)`) | `r outcome.age[7, "Palliative"]` (`r round(outcome.age[7, "Palliative"]/n.palliative, 2)`) | `r outcome.age[7, "Unknown"]` (`r round(outcome.age[7, "Unknown"]/n.unknown, 2)`) |
+| `r levels(patient.data$agegp10)[8]` | `r outcome.age[8, "Hospitalization"]` (`r round(outcome.age[8, "Hospitalization"]/n.inhospital, 2)`) | `r outcome.age[8, "Death"]` (`r round(outcome.age[8, "Death"]/n.deaths, 2)`) | `r outcome.age[8, "Discharge"]` (`r round(outcome.age[8, "Discharge"]/n.recovered, 2)`) | `r outcome.age[8, "Transfer"]` (`r round(outcome.age[8, "Transfer"]/n.transfer, 2)`) | `r outcome.age[8, "Palliative"]` (`r round(outcome.age[8, "Palliative"]/n.palliative, 2)`) | `r outcome.age[8, "Unknown"]` (`r round(outcome.age[8, "Unknown"]/n.unknown, 2)`) |
+| **Sex** | | | | | | |
+| Male    | `r outcome.sex[1, "Hospitalization"]` (`r round(outcome.sex[1, "Hospitalization"]/n.inhospital, 2)`) | `r outcome.sex[1, "Death"]` (`r round(outcome.sex[1, "Death"]/n.deaths, 2)`) | `r outcome.sex[1, "Discharge"]` (`r round(outcome.sex[1, "Discharge"]/n.recovered, 2)`) | `r outcome.sex[1, "Transfer"]` (`r round(outcome.sex[1, "Transfer"]/n.transfer, 2)`) | `r outcome.sex[1, "Palliative"]` (`r round(outcome.sex[1, "Palliative"]/n.palliative, 2)`) | `r outcome.sex[1, "Unknown"]` (`r round(outcome.sex[1, "Unknown"]/n.unknown, 2)`) |
+| Female  | `r outcome.sex[2, "Hospitalization"]` (`r round(outcome.sex[2, "Hospitalization"]/n.inhospital, 2)`) | `r outcome.sex[2, "Death"]` (`r round(outcome.sex[2, "Death"]/n.deaths, 2)`) | `r outcome.sex[2, "Discharge"]` (`r round(outcome.sex[2, "Discharge"]/n.recovered, 2)`) | `r outcome.sex[2, "Transfer"]` (`r round(outcome.sex[2, "Transfer"]/n.transfer, 2)`) | `r outcome.sex[2, "Palliative"]` (`r round(outcome.sex[2, "Palliative"]/n.palliative, 2)`) | `r outcome.sex[2, "Unknown"]` (`r round(outcome.sex[2, "Unknown"]/n.unknown, 2)`) |
+| Unknown | `r outcome.sex[3, "Hospitalization"]` (`r round(outcome.sex[3, "Hospitalization"]/n.inhospital, 2)`) | `r outcome.sex[3, "Death"]` (`r round(outcome.sex[3, "Death"]/n.deaths, 2)`) | `r outcome.sex[3, "Discharge"]` (`r round(outcome.sex[3, "Discharge"]/n.recovered, 2)`) | `r outcome.sex[3, "Transfer"]` (`r round(outcome.sex[3, "Transfer"]/n.transfer, 2)`) | `r outcome.sex[3, "Palliative"]` (`r round(outcome.sex[3, "Palliative"]/n.palliative, 2)`) | `r outcome.sex[3, "Unknown"]` (`r round(outcome.sex[3, "Unknown"]/n.unknown, 2)`) |
+
+---
+
+**Table 3:** Prevalence of Symptoms
+
+| **Symptoms**                                               | **Present**                          | **Absent**                        | **Unknown**                            |
+|------------------------------------------------------------|-------------------------------------------------------------------------------|-------------------------------|--------------------------------|
+| `r n.symptoms$Label[1]`                                      | `r n.symptoms[1, "Present"]` (`r round(n.symptoms[1, "Present"]/N, 2)`) | `r n.symptoms[1, "Absent"]` (`r round(n.symptoms[1, "Absent"]/N, 2)`)  | `r n.symptoms[1, "Unknown"]` (`r round(n.symptoms[1, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[2]`                                      | `r n.symptoms[2, "Present"]` (`r round(n.symptoms[2, "Present"]/N, 2)`) | `r n.symptoms[2, "Absent"]` (`r round(n.symptoms[2, "Absent"]/N, 2)`)  | `r n.symptoms[2, "Unknown"]` (`r round(n.symptoms[2, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[3]`                                      | `r n.symptoms[3, "Present"]` (`r round(n.symptoms[3, "Present"]/N, 2)`) | `r n.symptoms[3, "Absent"]` (`r round(n.symptoms[3, "Absent"]/N, 2)`)  | `r n.symptoms[3, "Unknown"]` (`r round(n.symptoms[3, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[4]`                                      | `r n.symptoms[4, "Present"]` (`r round(n.symptoms[4, "Present"]/N, 2)`) | `r n.symptoms[4, "Absent"]` (`r round(n.symptoms[4, "Absent"]/N, 2)`)  | `r n.symptoms[4, "Unknown"]` (`r round(n.symptoms[4, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[5]`                                      | `r n.symptoms[5, "Present"]` (`r round(n.symptoms[5, "Present"]/N, 2)`) | `r n.symptoms[5, "Absent"]` (`r round(n.symptoms[5, "Absent"]/N, 2)`)  | `r n.symptoms[5, "Unknown"]` (`r round(n.symptoms[5, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[6]`                                      | `r n.symptoms[6, "Present"]` (`r round(n.symptoms[6, "Present"]/N, 2)`) | `r n.symptoms[6, "Absent"]` (`r round(n.symptoms[6, "Absent"]/N, 2)`)  | `r n.symptoms[6, "Unknown"]` (`r round(n.symptoms[6, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[7]`                                      | `r n.symptoms[7, "Present"]` (`r round(n.symptoms[7, "Present"]/N, 2)`) | `r n.symptoms[7, "Absent"]` (`r round(n.symptoms[7, "Absent"]/N, 2)`)  | `r n.symptoms[7, "Unknown"]` (`r round(n.symptoms[7, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[8]`                                      | `r n.symptoms[8, "Present"]` (`r round(n.symptoms[8, "Present"]/N, 2)`) | `r n.symptoms[8, "Absent"]` (`r round(n.symptoms[8, "Absent"]/N, 2)`)  | `r n.symptoms[8, "Unknown"]` (`r round(n.symptoms[8, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[9]`                                      | `r n.symptoms[9, "Present"]` (`r round(n.symptoms[9, "Present"]/N, 2)`) | `r n.symptoms[9, "Absent"]` (`r round(n.symptoms[9, "Absent"]/N, 2)`)  | `r n.symptoms[9, "Unknown"]` (`r round(n.symptoms[9, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[10]`                                      | `r n.symptoms[10, "Present"]` (`r round(n.symptoms[10, "Present"]/N, 2)`) | `r n.symptoms[10, "Absent"]` (`r round(n.symptoms[10, "Absent"]/N, 2)`)  | `r n.symptoms[10, "Unknown"]` (`r round(n.symptoms[10, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[11]`                                      | `r n.symptoms[11, "Present"]` (`r round(n.symptoms[11, "Present"]/N, 2)`) | `r n.symptoms[11, "Absent"]` (`r round(n.symptoms[11, "Absent"]/N, 2)`)  | `r n.symptoms[11, "Unknown"]` (`r round(n.symptoms[11, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[12]`                                      | `r n.symptoms[12, "Present"]` (`r round(n.symptoms[12, "Present"]/N, 2)`) | `r n.symptoms[12, "Absent"]` (`r round(n.symptoms[12, "Absent"]/N, 2)`)  | `r n.symptoms[12, "Unknown"]` (`r round(n.symptoms[12, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[13]`                                      | `r n.symptoms[13, "Present"]` (`r round(n.symptoms[13, "Present"]/N, 2)`) | `r n.symptoms[13, "Absent"]` (`r round(n.symptoms[13, "Absent"]/N, 2)`)  | `r n.symptoms[13, "Unknown"]` (`r round(n.symptoms[13, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[14]`                                      | `r n.symptoms[14, "Present"]` (`r round(n.symptoms[14, "Present"]/N, 2)`) | `r n.symptoms[14, "Absent"]` (`r round(n.symptoms[14, "Absent"]/N, 2)`)  | `r n.symptoms[14, "Unknown"]` (`r round(n.symptoms[14, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[15]`                                      | `r n.symptoms[15, "Present"]` (`r round(n.symptoms[15, "Present"]/N, 2)`) | `r n.symptoms[15, "Absent"]` (`r round(n.symptoms[15, "Absent"]/N, 2)`)  | `r n.symptoms[15, "Unknown"]` (`r round(n.symptoms[15, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[16]`                                      | `r n.symptoms[16, "Present"]` (`r round(n.symptoms[16, "Present"]/N, 2)`) | `r n.symptoms[16, "Absent"]` (`r round(n.symptoms[16, "Absent"]/N, 2)`)  | `r n.symptoms[16, "Unknown"]` (`r round(n.symptoms[16, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[17]`                                      | `r n.symptoms[17, "Present"]` (`r round(n.symptoms[17, "Present"]/N, 2)`) | `r n.symptoms[17, "Absent"]` (`r round(n.symptoms[17, "Absent"]/N, 2)`)  | `r n.symptoms[17, "Unknown"]` (`r round(n.symptoms[17, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[18]`                                      | `r n.symptoms[18, "Present"]` (`r round(n.symptoms[18, "Present"]/N, 2)`) | `r n.symptoms[18, "Absent"]` (`r round(n.symptoms[18, "Absent"]/N, 2)`)  | `r n.symptoms[18, "Unknown"]` (`r round(n.symptoms[18, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[19]`                                      | `r n.symptoms[19, "Present"]` (`r round(n.symptoms[19, "Present"]/N, 2)`) | `r n.symptoms[19, "Absent"]` (`r round(n.symptoms[19, "Absent"]/N, 2)`)  | `r n.symptoms[19, "Unknown"]` (`r round(n.symptoms[19, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[20]`                                      | `r n.symptoms[20, "Present"]` (`r round(n.symptoms[20, "Present"]/N, 2)`) | `r n.symptoms[20, "Absent"]` (`r round(n.symptoms[20, "Absent"]/N, 2)`)  | `r n.symptoms[20, "Unknown"]` (`r round(n.symptoms[20, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[21]`                                      | `r n.symptoms[21, "Present"]` (`r round(n.symptoms[21, "Present"]/N, 2)`) | `r n.symptoms[21, "Absent"]` (`r round(n.symptoms[21, "Absent"]/N, 2)`)  | `r n.symptoms[21, "Unknown"]` (`r round(n.symptoms[21, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[22]`                                      | `r n.symptoms[22, "Present"]` (`r round(n.symptoms[22, "Present"]/N, 2)`) | `r n.symptoms[22, "Absent"]` (`r round(n.symptoms[22, "Absent"]/N, 2)`)  | `r n.symptoms[22, "Unknown"]` (`r round(n.symptoms[22, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[23]`                                      | `r n.symptoms[23, "Present"]` (`r round(n.symptoms[23, "Present"]/N, 2)`) | `r n.symptoms[23, "Absent"]` (`r round(n.symptoms[23, "Absent"]/N, 2)`)  | `r n.symptoms[23, "Unknown"]` (`r round(n.symptoms[23, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[24]`                                      | `r n.symptoms[24, "Present"]` (`r round(n.symptoms[24, "Present"]/N, 2)`) | `r n.symptoms[24, "Absent"]` (`r round(n.symptoms[24, "Absent"]/N, 2)`)  | `r n.symptoms[24, "Unknown"]` (`r round(n.symptoms[24, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[25]`                                      | `r n.symptoms[25, "Present"]` (`r round(n.symptoms[25, "Present"]/N, 2)`) | `r n.symptoms[25, "Absent"]` (`r round(n.symptoms[25, "Absent"]/N, 2)`)  | `r n.symptoms[25, "Unknown"]` (`r round(n.symptoms[25, "Unknown"]/N, 2)`)        |
+| `r n.symptoms$Label[26]`                                      | `r n.symptoms[26, "Present"]` (`r round(n.symptoms[26, "Present"]/N, 2)`) | `r n.symptoms[26, "Absent"]` (`r round(n.symptoms[26, "Absent"]/N, 2)`)  | `r n.symptoms[26, "Unknown"]` (`r round(n.symptoms[26, "Unknown"]/N, 2)`)        |
+|                                    |                                                                                  |                                                                            |                                      |                         
+
+---
+
+\newpage
+
+**Table 4:** Prevalence of Comorbidities
+
+
+
+
+| **Comorbidities**                                               | **Present**                          | **Absent**                        | **Unknown**                            |
+|------------------------------------------------------------|-------------------------------------------------------------------------------|-------------------------------|--------------------------------|
+| `r n.comorbs$Label[1]`                                      | `r n.comorbs[1, "Present"]` (`r round(n.comorbs[1, "Present"]/N, 2)`) | `r n.comorbs[1, "Absent"]` (`r round(n.comorbs[1, "Absent"]/N, 2)`)  | `r n.comorbs[1, "Unknown"]` (`r round(n.comorbs[1, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[2]`                                      | `r n.comorbs[2, "Present"]` (`r round(n.comorbs[2, "Present"]/N, 2)`) | `r n.comorbs[2, "Absent"]` (`r round(n.comorbs[2, "Absent"]/N, 2)`)  | `r n.comorbs[2, "Unknown"]` (`r round(n.comorbs[2, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[3]`                                      | `r n.comorbs[3, "Present"]` (`r round(n.comorbs[3, "Present"]/N, 2)`) | `r n.comorbs[3, "Absent"]` (`r round(n.comorbs[3, "Absent"]/N, 2)`)  | `r n.comorbs[3, "Unknown"]` (`r round(n.comorbs[3, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[4]`                                      | `r n.comorbs[4, "Present"]` (`r round(n.comorbs[4, "Present"]/N, 2)`) | `r n.comorbs[4, "Absent"]` (`r round(n.comorbs[4, "Absent"]/N, 2)`)  | `r n.comorbs[4, "Unknown"]` (`r round(n.comorbs[4, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[5]`                                      | `r n.comorbs[5, "Present"]` (`r round(n.comorbs[5, "Present"]/N, 2)`) | `r n.comorbs[5, "Absent"]` (`r round(n.comorbs[5, "Absent"]/N, 2)`)  | `r n.comorbs[5, "Unknown"]` (`r round(n.comorbs[5, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[6]`                                      | `r n.comorbs[6, "Present"]` (`r round(n.comorbs[6, "Present"]/N, 2)`) | `r n.comorbs[6, "Absent"]` (`r round(n.comorbs[6, "Absent"]/N, 2)`)  | `r n.comorbs[6, "Unknown"]` (`r round(n.comorbs[6, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[7]`                                      | `r n.comorbs[7, "Present"]` (`r round(n.comorbs[7, "Present"]/N, 2)`) | `r n.comorbs[7, "Absent"]` (`r round(n.comorbs[7, "Absent"]/N, 2)`)  | `r n.comorbs[7, "Unknown"]` (`r round(n.comorbs[7, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[8]`                                      | `r n.comorbs[8, "Present"]` (`r round(n.comorbs[8, "Present"]/N, 2)`) | `r n.comorbs[8, "Absent"]` (`r round(n.comorbs[8, "Absent"]/N, 2)`)  | `r n.comorbs[8, "Unknown"]` (`r round(n.comorbs[8, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[9]`                                      | `r n.comorbs[9, "Present"]` (`r round(n.comorbs[9, "Present"]/N, 2)`) | `r n.comorbs[9, "Absent"]` (`r round(n.comorbs[9, "Absent"]/N, 2)`)  | `r n.comorbs[9, "Unknown"]` (`r round(n.comorbs[9, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[10]`                                      | `r n.comorbs[10, "Present"]` (`r round(n.comorbs[10, "Present"]/N, 2)`) | `r n.comorbs[10, "Absent"]` (`r round(n.comorbs[10, "Absent"]/N, 2)`)  | `r n.comorbs[10, "Unknown"]` (`r round(n.comorbs[10, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[11]`                                      | `r n.comorbs[11, "Present"]` (`r round(n.comorbs[11, "Present"]/N, 2)`) | `r n.comorbs[11, "Absent"]` (`r round(n.comorbs[11, "Absent"]/N, 2)`)  | `r n.comorbs[11, "Unknown"]` (`r round(n.comorbs[11, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[12]`                                      | `r n.comorbs[12, "Present"]` (`r round(n.comorbs[12, "Present"]/N, 2)`) | `r n.comorbs[12, "Absent"]` (`r round(n.comorbs[12, "Absent"]/N, 2)`)  | `r n.comorbs[12, "Unknown"]` (`r round(n.comorbs[12, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[13]`                                      | `r n.comorbs[13, "Present"]` (`r round(n.comorbs[13, "Present"]/N, 2)`) | `r n.comorbs[13, "Absent"]` (`r round(n.comorbs[13, "Absent"]/N, 2)`)  | `r n.comorbs[13, "Unknown"]` (`r round(n.comorbs[13, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[14]`                                      | `r n.comorbs[14, "Present"]` (`r round(n.comorbs[14, "Present"]/N, 2)`) | `r n.comorbs[14, "Absent"]` (`r round(n.comorbs[14, "Absent"]/N, 2)`)  | `r n.comorbs[14, "Unknown"]` (`r round(n.comorbs[14, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[15]`                                      | `r n.comorbs[15, "Present"]` (`r round(n.comorbs[15, "Present"]/N, 2)`) | `r n.comorbs[15, "Absent"]` (`r round(n.comorbs[15, "Absent"]/N, 2)`)  | `r n.comorbs[15, "Unknown"]` (`r round(n.comorbs[15, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[16]`                                      | `r n.comorbs[16, "Present"]` (`r round(n.comorbs[16, "Present"]/N, 2)`) | `r n.comorbs[16, "Absent"]` (`r round(n.comorbs[16, "Absent"]/N, 2)`)  | `r n.comorbs[16, "Unknown"]` (`r round(n.comorbs[16, "Unknown"]/N, 2)`)        |
+| `r n.comorbs$Label[17]`                                      | `r n.comorbs[17, "Present"]` (`r round(n.comorbs[17, "Present"]/N, 2)`) | `r n.comorbs[17, "Absent"]` (`r round(n.comorbs[17, "Absent"]/N, 2)`)  | `r n.comorbs[17, "Unknown"]` (`r round(n.comorbs[17, "Unknown"]/N, 2)`)        |
+|                                    |                                                                                  |                                                                            |                                      |    
+---
+
+**Table 5:** Prevalence of Treatments
+
+The counts presented for treatments include all cases, not only cases with complete details of treatments (as expressed in the summary).  
+
+
+| **Treatments**                                               | **Present**                          | **Absent**                        | **Unknown**                            |
+|------------------------------------------------------------|-------------------------------------------------------------------------------|-------------------------------|--------------------------------|
+| `r n.treats$Label[1]`                                      | `r n.treats[1, "Present"]` (`r round(n.treats[1, "Present"]/N, 2)`) | `r n.treats[1, "Absent"]` (`r round(n.treats[1, "Absent"]/N, 2)`)  | `r n.treats[1, "Unknown"]` (`r round(n.treats[1, "Unknown"]/N, 2)`)        |
+| `r n.treats$Label[2]`                                      | `r n.treats[2, "Present"]` (`r round(n.treats[2, "Present"]/N, 2)`) | `r n.treats[2, "Absent"]` (`r round(n.treats[2, "Absent"]/N, 2)`)  | `r n.treats[2, "Unknown"]` (`r round(n.treats[2, "Unknown"]/N, 2)`)        |
+| `r n.treats$Label[3]`                                      | `r n.treats[3, "Present"]` (`r round(n.treats[3, "Present"]/N, 2)`) | `r n.treats[3, "Absent"]` (`r round(n.treats[3, "Absent"]/N, 2)`)  | `r n.treats[3, "Unknown"]` (`r round(n.treats[3, "Unknown"]/N, 2)`)        |
+| `r n.treats$Label[4]`                                      | `r n.treats[4, "Present"]` (`r round(n.treats[4, "Present"]/N, 2)`) | `r n.treats[4, "Absent"]` (`r round(n.treats[4, "Absent"]/N, 2)`)  | `r n.treats[4, "Unknown"]` (`r round(n.treats[4, "Unknown"]/N, 2)`)        |
+| `r n.treats$Label[5]`                                      | `r n.treats[5, "Present"]` (`r round(n.treats[5, "Present"]/N, 2)`) | `r n.treats[5, "Absent"]` (`r round(n.treats[5, "Absent"]/N, 2)`)  | `r n.treats[5, "Unknown"]` (`r round(n.treats[5, "Unknown"]/N, 2)`)        |
+| `r n.treats$Label[6]`                                      | `r n.treats[6, "Present"]` (`r round(n.treats[6, "Present"]/N, 2)`) | `r n.treats[6, "Absent"]` (`r round(n.treats[6, "Absent"]/N, 2)`)  | `r n.treats[6, "Unknown"]` (`r round(n.treats[6, "Unknown"]/N, 2)`)        |
+| `r n.treats$Label[7]`                                      | `r n.treats[7, "Present"]` (`r round(n.treats[7, "Present"]/N, 2)`) | `r n.treats[7, "Absent"]` (`r round(n.treats[7, "Absent"]/N, 2)`)  | `r n.treats[7, "Unknown"]` (`r round(n.treats[7, "Unknown"]/N, 2)`)        |
+| `r n.treats$Label[8]`                                      | `r n.treats[8, "Present"]` (`r round(n.treats[8, "Present"]/N, 2)`) | `r n.treats[8, "Absent"]` (`r round(n.treats[8, "Absent"]/N, 2)`)  | `r n.treats[8, "Unknown"]` (`r round(n.treats[8, "Unknown"]/N, 2)`)        |
+| `r n.treats$Label[9]`                                      | `r n.treats[9, "Present"]` (`r round(n.treats[9, "Present"]/N, 2)`) | `r n.treats[9, "Absent"]` (`r round(n.treats[9, "Absent"]/N, 2)`)  | `r n.treats[9, "Unknown"]` (`r round(n.treats[9, "Unknown"]/N, 2)`)        |
+| `r n.treats$Label[10]`                                      | `r n.treats[10, "Present"]` (`r round(n.treats[10, "Present"]/N, 2)`) | `r n.treats[10, "Absent"]` (`r round(n.treats[10, "Absent"]/N, 2)`)  | `r n.treats[10, "Unknown"]` (`r round(n.treats[10, "Unknown"]/N, 2)`)        |
+| `r n.treats$Label[11]`                                      | `r n.treats[11, "Present"]` (`r round(n.treats[11, "Present"]/N, 2)`) | `r n.treats[11, "Absent"]` (`r round(n.treats[11, "Absent"]/N, 2)`)  | `r n.treats[11, "Unknown"]` (`r round(n.treats[11, "Unknown"]/N, 2)`)        |
+---
+
+\newpage
+
+**Table 6:** Key time variables.
+
+SD: Standard deviation; IQR: Interquartile range. 
+Outliers (values greater than 120) were excluded prior to the computation of estimates. 
+
+
+
+
+| Time (in days)             | Mean (observed)                        | SD (observed)                       | Median (observed)                        | IQR (observed )                       | 
+|----------------------------|----------------------------------------|--------------------------------------|------------------------------------------|---------------------------------------|
+| Length of hospital stay    | `r hosp.mean`            | `r hosp.sd`            | `r hosp.median`            | `r hosp.iqr`            | 
+| Symptom onset to admission | `r  onset.adm.mean`             | `r onset.adm.sd`              | `r  onset.adm.median`             | `r onset.adm.iqr`              | 
+|                            |                                        |                                      |                                          |                                       | 
+| Admission to ICU entry     | `r adm.icu.mean`  | `r adm.icu.sd`  | `r adm.icu.median`  | `r adm.icu.iqr`  | 
+| Duration of ICU            | `r dur.icu.mean`  | `r dur.icu.sd`  | `r dur.icu.median`  | `r dur.icu.iqr`  | 
+|                            |                                        |                                      |                                          |                                       | 
+| Admission to IMV           | `r adm.imv.mean`  | `r adm.imv.sd`  | `r adm.imv.median`  | `r adm.imv.iqr`  | 
+| Duration of IMV            | `r dur.imv.mean`  | `r dur.imv.sd`  | `r dur.imv.median`  | `r dur.imv.iqr`  | 
+|                            |                                        |                                      |                                          |                                       | 
+| Admission to NIV           | `r adm.niv.mean` | `r adm.niv.sd` | `r adm.niv.median` | `r adm.niv.iqr` | 
+| Duration of NIV            | `r dur.niv.mean` | `r dur.niv.sd` | `r dur.niv.median` | `r dur.niv.iqr` | 
+

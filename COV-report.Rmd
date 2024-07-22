@@ -1,0 +1,409 @@
+---
+title: "COVID-19 Report PDF"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: no
+    includes:
+      in_header: header.tex
+  html_document:
+    df_print: paged
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float:
+      collapsed: no
+urlcolor: blue
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, options(scipen=999))
+
+
+# Core Shiny functionality
+library(shiny)
+library(shinydashboard)
+library(shinyWidgets)
+
+# Data manipulation and analysis
+library(dplyr)
+library(tidyverse)
+library(tidymodels)
+library(broom)
+library(magrittr)
+
+# Visualization
+library(viridis)
+library(UpSetR)
+library(shapviz)
+library(leaflet)
+library(survminer)
+library(apyramid)
+
+# Geospatial data
+# library(sf)
+# library(rgeos)
+# library(rnaturalearth)
+# library(rnaturalearthdata)
+
+# Statistical and survival analysis
+library(boot)
+library(survival)
+library(fitdistrplus)
+library(binom)
+
+# Time series and forecasting
+library(forecast)
+library(TTR)
+
+# Date and time manipulation
+library(lubridate)
+
+# Reporting and documentation
+library(knitr)
+library(kableExtra)
+library(rmarkdown)
+library(tinytex)
+
+# SHAP explanations
+library(kernelshap)
+
+# Utility
+library(glue)
+
+reprocess.data <- FALSE
+one.percent.debug <- TRUE
+today = "2024-07-10" #reupdated
+dataset.filename = "PhilippinesCCPCORE_DATA_2024-06-07_0617.csv" #reupdated
+
+verbose <- TRUE
+
+pub.date.manual <- FALSE
+# Can enter a date for the report, or leave it as false to date the report with the date it is produced
+
+# file locations
+
+# code.path <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+# data.path <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+# row.data.file <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+
+if (!pub.date.manual) {
+  pub.date <- Sys.Date()
+} else {
+  pub.date <- pub.date.manual
+}
+
+# Source files
+if(!(reprocess.data) & file.exists(glue("{code.path}patient_data_{today}.rda"))){
+  load(glue("{code.path}patient_data_{today}.rda"))
+} else {
+  source(glue("{code.path}process_data.R"))
+}
+
+if(!(reprocess.data) & file.exists(glue("{code.path}backup_data_{today}.rda"))){
+  load(glue("{code.path}backup_data_{today}.rda"))
+} else {
+  source(glue("{code.path}backup.R"))
+}
+
+library(glue)
+
+# code.path <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+# data.path <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+# row.data.file <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+
+load(glue("{code.path}patient_data_{today}.rda"))
+load(glue("{code.path}backup_data_{today}.rda"))
+load(glue("{code.path}time_series_data_{today}.rda"))
+load(glue("{code.path}forecast_data_{today}.rda"))
+load(glue("{code.path}ml_data_{today}.rda"))
+
+N <- nrow(patient.data)
+
+sex.male <- sum(patient.data$sex == 1, na.rm = TRUE)
+sex.female <- sum(patient.data$sex == 2, na.rm = TRUE)
+sex.unknown <- N - sex.male - sex.female
+
+median.age <- median(patient.data$age_estimateyears, na.rm = TRUE)
+min.age <- min(patient.data$age_estimateyears, na.rm = TRUE)
+max.age <- max(patient.data$age_estimateyears, na.rm = TRUE)
+
+# n.deaths <- nrow(patient.data[patient.data$outcome == "death", ])
+# n.recovered <- nrow(patient.data[patient.data$outcome == "discharge", ])
+# n.unknown <- N - n.deaths - n.recovered
+
+n.deaths <- sum(patient.data$exit.code == "death", na.rm=TRUE)
+n.recovered <- sum(patient.data$exit.code == "discharge", na.rm=TRUE)
+n.inhospital <- sum(patient.data$exit.code == "hospitalisation", na.rm=TRUE) #still in hospital
+n.transfer <- sum(patient.data$exit.code == "transfer", na.rm=TRUE)
+n.palliative <- sum(patient.data$exit.code == "transfer.palliative", na.rm=TRUE)
+n.unknown <- N - (n.deaths + n.recovered + n.inhospital + n.transfer + n.palliative)
+
+onst.adm <- function(tbl){
+  dsstdat <- as.Date(tbl$dsstdat, format="%m/%d/%Y")
+  dsstdat <- dsstdat[!is.na(dsstdat)]
+  cestdat <- as.Date(tbl$cestdat, format="%m/%d/%Y")
+  cestdat <- cestdat[!is.na(cestdat)]
+  
+  time_difference = c()
+  
+  for (i in 1:nrow(tbl)){
+    if(!is.na(dsstdat[i]) && !is.na(cestdat[i])){
+      difference = abs(as.numeric(dsstdat[i] - cestdat[i]))
+      cond = difference <= 31
+      if(cond){
+        time_difference = c(time_difference, difference)
+      }
+    }
+  }
+  time_difference
+}
+
+mean.onst.adm <- mean(onst.adm(patient.data))
+sd.onst.adm <- sd(onst.adm(patient.data))
+
+adm.out <- function(tbl){
+
+  subj_id <- tbl$subjid
+  dsst_dat <- tbl$dsstdat
+  dsst_dtc <- tbl$dsstdtc
+  
+  entry <- data.frame(subj_id, dsst_dat)
+  exit <- data.frame(subj_id, dsst_dtc)
+  
+  entry <- entry[!is.na(entry$dsst_dat),]
+  
+  exit <- exit[!is.na(exit$dsst_dtc),]
+  
+  join_df <- merge(entry, exit, by="subj_id")
+  
+  entry <- join_df$entry
+  exit <- join_df$exit
+  
+  for (i in 1:nrow(join_df)){
+    temp <- entry[i]
+    entry[i] <- paste(c(substr(temp,1,4),substr(temp,5,6), substr(temp,7,8)), collapse="-")
+    
+    temp <- exit[i]
+    exit[i] <- paste(c(substr(temp,1,4),substr(temp,5,6), substr(temp,7,8)), collapse="-")
+  }
+  
+  time_difference <- c()
+  
+  join_df$dsst_dtc <- as.Date(join_df$dsst_dtc, format="%m/%d/%Y")
+  join_df$dsst_dat <- as.Date(join_df$dsst_dat, format="%m/%d/%Y")
+
+  
+  for (i in 1:nrow(join_df)) {
+    difference <- abs(join_df$dsst_dtc[i] - join_df$dsst_dat[i])
+    if (difference <= 31){
+      time_difference <- c(time_difference, difference)
+    }
+  }
+  time_difference
+}
+
+mean.adm.out <- mean(adm.out(backup.data))
+sd.adm.out <- sd(adm.out(backup.data))
+
+count.icu <- sum(!is.na(patient.data$icu_hostdat))
+
+```
+
+*A global federation of clinical research networks, providing a proficient, coordinated, and agile research response to outbreak-prone infectious diseases*
+
+
+# COVID-19 Report: `r format(pub.date, "%d %B %Y")` {-}
+Containing data extracted `r today`
+
+\newpage
+# Summary
+
+The results in this report have been produced using data from the joint database of Makati Medical Center and Tropical Disease Foundation. For information, or to contribute to the collaboration, please contact [inquiries@isaric.org](inquiries@isaric.org).
+
+We thank all of the data contributors for collecting standardised data during these extraordinary times. We plan to issue this report of aggregate data regularly for the duration of the SARS-CoV-2/COVID-19 pandemic.
+
+Up to the date of this report, data have been entered for **`r N`** individuals from from various sites across the Republic of the Philippines.
+
+The analysis detailed in this report only includes individuals for whom data collection commenced on or before 15 March 2021. (We have applied a 14-day rule to focus analysis on individuals who are more likely to have a recorded outcome. By excluding patients enrolled during the last 14 days, we aim to reduce the number of incomplete data records and thus improve the generalisability of the results and the accuracy of the outcomes. However, this limits our focus to a restricted cohort despite the much larger volumes of data held in the database.) and who have laboratory-confirmed or clinically-diagnosed SARS-COV-2 infection.
+
+The cohort comprises **`r N`** individuals, including `r sex.male` males and `r sex.female` females - sex is unreported for `r sex.unknown` cases.
+
+The median age (calculated based on reported age) is `r median.age` years. The minimum and maximum observed ages are `r min.age` and `r max.age` years respectively.
+
+Outcomes have been recorded for `r N` patients, consisting of `r n.recovered` recoveries, `r n.deaths` deaths, `r `n.transfer` facility-transfers, and `r n.palliative` palliative discharge. Follow-up is ongoing for `r n.inhospital` in-hospital patients. Outcome is unreported for `r n.unknown`
+
+The observed mean duration for the number of days from hospital admission to outcome (death or discharge) is `r mean.adm.out` days, with a standard deviation (SD) of `r sd.adm.out`. These estimates are based on all cases which have complete records on length of hospital stay.
+
+The observed mean number of days from (first) symptom onset to hospital admission is `r mean.onst.adm` (SD: `r sd.onst.adm`).
+
+The symptoms on admission represent the policy for hospital admission and containment at that time plus, whatever the case definition was. As time passes for most countries these will change. The four most common symptoms at admission were fatigue and malaise alongside cough, history of fever and shortness of breath.
+
+\newpage
+# Patient Characteristics
+
+
+**Figure 1**: Age and sex distribution of patients. Bar fills are outcome (death/discharge/ongoing care) at the time of report.
+
+```{r agepyramid, echo = FALSE, out.width= "100%"}
+
+age.pyramid(patient.data)
+
+```
+\newpage
+
+**Figure 2**: **Top**: Frequency of symptoms seen at admission amongst COVID-19 patients. Bars are annotated with a fraction representing the number of patients presenting with this symptom over the number of patients for whom presence or absence of this symptom was recorded. **Middle**: The distribution of combinations of the four most common symptoms, amongst all patients for whom these data were recorded. Filled and empty circles below the x-axis indicate the presence or absence of each comorbidity. The "Any other" category contains all remaining symptoms in the top plot. **Bottom**: Heatmap for correlation between symptoms. Fill colour is the phi correlation coefficient for each pair of symptoms, calculated amongst patients with recorded presence or absence of both.
+
+
+
+```{r symptomcombos, echo=FALSE, out.width= "100%", fig.height=5, message=FALSE}
+symptom.prevalence.plot(patient.data)
+```
+```{r symptomcombos2, echo=FALSE, out.width= "100%", fig.height=5, message=FALSE}
+symptoms.upset(patient.data)
+```
+
+
+\newpage
+**Figure 3**:  **Top**: Frequency of comorbidities or other concomitant conditions seen at admission amongst COVID-19 patients. Bars are annotated with a fraction representing the number of patients presenting with this comorbidity over the number of patients for whom presence or absence of this comorbidity was recorded.  **Bottom**: The distribution of combinations of the four most common such conditions, amongst all patients for whom these data were recorded. Filled and empty circles below the x-axis indicate the presence or absence of each comorbidity. The "Any other" category contains all remaining conditions in the top plot, and any others recorded as free text by clinical staff of individuals had no comorbidities positively reported on admission. (As data was missing for one or more comorbidities for some patients, this should be regarded as an upper bound). 
+
+
+```{r comorbcombos, echo=FALSE, out.width= "100%", fig.height=5, message=FALSE}
+comorbidity.prevalence.plot(patient.data)
+
+```
+
+*Caution when interpreting this result as the sample size is small due to it being a new variable in the dataset.
+
+\newpage
+
+```{r comorbcombos2, echo=FALSE, out.width= "100%", fig.height=5, message=FALSE}
+comorbidities.upset(patient.data)
+
+```
+
+\newpage
+# Hospital stays and outcomes
+
+**Figure 4**: Distribution of length of hospital stay, according to sex. This only includes cases with reported outcomes. The coloured areas indicate the kernel probability density of the observed data and the box plots show the median and interquartile range of the variable of interest. White dots are outliers.
+
+```{r  staybysex, out.width= "100%"}
+
+violin.sex.func(backup.data)
+```
+
+**Figure 5**: Distribution of length of hospital stay, according to patient age group. This only includes cases with reported outcomes. The coloured areas indicate the kernel probability density of the observed data and the box plots show the median and interquartile range of the variable of interest. White dots are outliers.
+
+```{r  staybyage, out.width= "100%"}
+
+violin.age.func(backup.data)
+```
+
+
+\newpage
+**Figure 6**: Cumulative patient numbers and outcomes by epidemiological week of admission (or, for patients infected in hospital, of symptom onset). The rightmost bar, marked with an asterisk, represents an incomplete week (due to the 14-day cutoff).
+
+```{r recruitment3, echo=FALSE, out.width= "100%"}
+
+outcomes.by.admission.date(patient.data)
+
+```
+
+\newpage
+
+# Treatment
+
+**Figure 7**: **Top**: Treatments used. This only includes patients for whom this information was recorded. **Bottom**: The distribution of combinations of antimicrobial treatments and steroids administered during hospital stay, across all patients with completed hospital stay and recorded treatment data. Filled and empty circles below the x-axis indicate treatments that were and were not administered.
+
+
+```{r treatment1, echo=FALSE, out.width= "100%"}
+treatment.use.plot(backup.data)
+```
+```{r treatment2, echo=FALSE, out.width= "100%"}
+treatment.upset(backup.data)
+```
+
+*Caution when interpreting this result as the sample size is small due to it being a new variable in the dataset.
+
+\newpage
+
+# Statistical Analysis
+
+**Figure 8**: Distribution of time from symptom onset to admission. The blue curve is the Gamma distribution fit to the data. The black dashed line indicates the position of the expected mean. The expected mean estimate here differs from the observed mean indicated in the summary text due to the differences in estimation: the mean shown in the figure below is the mean of the fitted Gamma distribution whereas the observed mean (in the summary text) is the arithmetic mean.
+
+```{r onsetadmission, out.width = '100%'}
+
+onset.adm.plot(patient.data)
+
+```
+
+\newpage
+
+**Figure 9**: Distribution of time from admission to an outcome - either death or recovery (discharge). The blue curve is the Gamma distribution fit to the data. The black dashed line indicates the position of the expected mean. The expected mean differs from the observed mean in that it accounts for unobserved outcomes.
+
+
+```{r  admoutcome, out.width = '100%'}
+
+adm.outcome.plot(backup.data)
+
+```
+
+\newpage
+# Time Series Forecasting
+
+**Figure 10**: **Daily New COVID-19 Hospital Admissions.** Time series plot for daily new COVID-19 hospital admissions and its 30-day forecast.
+```{r admissionlstm, out.width = '100%'}
+admission.lstm(backup.data)
+```
+
+**Figure 11**: **Daily New COVID-19 Positive Cases.** Time series plot for daily new COVID-19 positive cases and its 30-day forecast.
+```{r positivelstm, out.width = '100%'}
+positive.lstm(backup.data)
+```
+
+**Figure 12**: **Daily COVID-19 Active Cases.** Time series plot for daily COVID-19 active cases and its 30-day forecast.
+```{r activelstm, out.width = '100%'}
+active.lstm(backup.data)
+```
+
+**Figure 13**: **Daily New COVID-19 Deaths.** Time series plot for daily new COVID-19 deaths and its 30-day forecast.
+```{r deathrnn, out.width = '100%'}
+death.rnn(backup.data)
+```
+
+**Figure 14**: **Daily COVID-19 Bed Demands.** Time series plot for daily COVID-19 bed demands and its 30-day forecast.
+```{r bedlstm, out.width = '100%'}
+bed.lstm(backup.data)
+```
+
+**Figure 15**: **Daily New COVID-19 ICU Admissions.** Time series plot for daily new COVID-19 ICU admissions and its 30-day forecast.
+```{r iculstm, out.width = '100%'}
+icu.lstm(backup.data)
+```
+
+\newpage
+# Significant Predictors of COVID-19 Mortality Risk and Hospitalization Length
+
+**Figure 16**: **Significant Predictors of COVID-19 Mortality.** Significant predictors of death due to COVID-19. SHAP values indicate the contribution of each feature to COVID-19 mortality prediction. Higher SHAP values denote a stronger influence on the outcome death.
+
+```{r impdeathbar, out.width = '100%'}
+imp.death1(backup.data)
+```
+
+**Figure 17**: **Contribution of Significant Predictors to COVID-19 Mortality.** How each significant predictor contributes to COVID-19 mortality outcomes. Predictors with positive SHAP values contribute to an increased risk of death. The further the SHAP value is from zero, the stronger the contribution to higher risk. For predictors with red points and positive SHAP values, high values of these predictors increase the risk of death.
+
+```{r impdeathbee, out.width = '100%'}
+imp.death2(backup.data)
+```
+
+**Figure 19**: **Significant Predictors of Length of Hospital Stay.** Significant predictors of length of hospital stay. SHAP values indicate the contribution of each feature to hospitalization length prediction. Higher SHAP values denote a stronger influence on the length of hospital stay.
+
+```{r implosbar, out.width = '100%'}
+imp.los1(backup.data)
+```
+
+**Figure 19**: **Contribution of Significant Predictors to the Length of Hospital Stay.** How each significant predictor contributes to hospitalization length outcomes. Predictors with positive SHAP values contribute to a longer hospital stay. The further the SHAP value is from zero, the stronger the contribution to longer hospital stay. For predictors with red points and positive SHAP values, high values of these predictors increase the risk of longer hospitalization.
+
+```{r implosbee, out.width = '100%'}
+imp.los2(backup.data)
+```

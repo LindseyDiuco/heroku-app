@@ -1,2 +1,2 @@
-# iris-r-heroku
-Deploying the iris predictor web app built with R shiny on Heroku
+# heroku-app
+Deploying the ISARIC COVID19 Report Dashboard built with R shiny on Heroku

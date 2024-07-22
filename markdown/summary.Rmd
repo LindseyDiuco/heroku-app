@@ -1,0 +1,134 @@
+---
+title: "Summary"
+output: md_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, options(scipen=999))
+
+library(knitr)
+
+today = "2024-07-10" #reupdated
+
+library(glue)
+
+# code.path <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+# data.path <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+# row.data.file <- 'D:/OneDrive/Documents/GitHub/ISARIC-COVID-Oxford'
+
+load(glue("{code.path}patient_data_{today}.rda"))
+load(glue("{code.path}backup_data_{today}.rda"))
+load(glue("{code.path}time_series_data_{today}.rda"))
+
+N <- nrow(patient.data)
+
+sex.male <- sum(patient.data$sex == 1, na.rm = TRUE)
+sex.female <- sum(patient.data$sex == 2, na.rm = TRUE)
+sex.unknown <- N - sex.male - sex.female
+
+median.age <- median(patient.data$age_estimateyears, na.rm = TRUE)
+min.age <- min(patient.data$age_estimateyears, na.rm = TRUE)
+max.age <- max(patient.data$age_estimateyears, na.rm = TRUE)
+
+n.deaths <- sum(patient.data$exit.code == "death", na.rm=TRUE)
+n.recovered <- sum(patient.data$exit.code == "discharge", na.rm=TRUE)
+n.inhospital <- sum(patient.data$exit.code == "hospitalisation", na.rm=TRUE) #still in hospital
+n.transfer <- sum(patient.data$exit.code == "transfer", na.rm=TRUE)
+n.palliative <- sum(patient.data$exit.code == "transfer.palliative", na.rm=TRUE)
+n.unknown <- N - (n.deaths + n.recovered + n.inhospital + n.transfer + n.palliative)
+
+# n.deaths <- nrow(patient.data[patient.data$outcome == "death", ])
+# n.recovered <- nrow(patient.data[patient.data$outcome == "discharge", ])
+# n.unknown <- N - n.deaths - n.recovered
+
+onst.adm <- function(tbl){
+  dsstdat <- as.Date(tbl$dsstdat, format="%m/%d/%Y")
+  dsstdat <- dsstdat[!is.na(dsstdat)]
+  cestdat <- as.Date(tbl$cestdat, format="%m/%d/%Y")
+  cestdat <- cestdat[!is.na(cestdat)]
+  
+  time_difference = c()
+  
+  for (i in 1:nrow(tbl)){
+    if(!is.na(dsstdat[i]) && !is.na(cestdat[i])){
+      difference = abs(as.numeric(dsstdat[i] - cestdat[i]))
+      cond = difference <= 31
+      if(cond){
+        time_difference = c(time_difference, difference)
+      }
+    }
+  }
+  time_difference
+}
+
+mean.onst.adm <- mean(onst.adm(patient.data))
+sd.onst.adm <- sd(onst.adm(patient.data))
+
+adm.out <- function(tbl){
+  tbl <- backup.data
+  
+  subj_id <- tbl$subjid
+  dsst_dat <- tbl$dsstdat
+  dsst_dtc <- tbl$dsstdtc
+  
+  entry <- data.frame(subj_id, dsst_dat)
+  exit <- data.frame(subj_id, dsst_dtc)
+  
+  entry <- entry[!is.na(entry$dsst_dat),]
+  
+  exit <- exit[!is.na(exit$dsst_dtc),]
+  
+  join_df <- merge(entry, exit, by="subj_id")
+  
+  entry <- join_df$entry
+  exit <- join_df$exit
+  
+  for (i in 1:nrow(join_df)){
+    temp <- entry[i]
+    entry[i] <- paste(c(substr(temp,1,4),substr(temp,5,6), substr(temp,7,8)), collapse="-")
+    
+    temp <- exit[i]
+    exit[i] <- paste(c(substr(temp,1,4),substr(temp,5,6), substr(temp,7,8)), collapse="-")
+  }
+  
+  time_difference <- c()
+  
+  join_df$dsst_dtc <- as.Date(join_df$dsst_dtc, format="%m/%d/%Y")
+  join_df$dsst_dat <- as.Date(join_df$dsst_dat, format="%m/%d/%Y")
+
+  
+  for (i in 1:nrow(join_df)) {
+    difference <- abs(join_df$dsst_dtc[i] - join_df$dsst_dat[i])
+    if (difference <= 31){
+      time_difference <- c(time_difference, difference)
+    }
+  }
+  time_difference
+}
+
+mean.adm.out <- mean(adm.out(backup.data))
+sd.adm.out <- sd(adm.out(backup.data))
+
+count.icu <- sum(!is.na(patient.data$icu_hostdat))
+
+```
+
+The results in this report have been produced using data from the joint database of Makati Medical Center and Tropical Disease Foundation. For information, or to contribute to the collaboration, please contact [inquiries@isaric.org](inquiries@isaric.org).
+
+We thank all of the data contributors for collecting standardised data during these extraordinary times. We plan to issue this report of aggregate data regularly for the duration of the SARS-CoV-2/COVID-19 pandemic.
+
+Up to the date of this report, data have been entered for **`r N`** individuals from from various sites across the Republic of the Philippines.
+
+The analysis detailed in this report only includes individuals for whom data collection commenced on or before 15 March 2021. (We have applied a 14-day rule to focus analysis on individuals who are more likely to have a recorded outcome. By excluding patients enrolled during the last 14 days, we aim to reduce the number of incomplete data records and thus improve the generalisability of the results and the accuracy of the outcomes. However, this limits our focus to a restricted cohort despite the much larger volumes of data held in the database.) and who have laboratory-confirmed or clinically-diagnosed SARS-COV-2 infection.
+
+The cohort comprises **`r N`** individuals, including `r sex.male` males and `r sex.female` females - sex is unreported for `r sex.unknown` cases.
+
+The median age (calculated based on reported age) is `r median.age` years. The minimum and maximum observed ages are `r min.age` and `r max.age` years respectively.
+
+Outcomes have been recorded for `r N` patients, consisting of `r n.recovered` recoveries, `r n.deaths` deaths, `r n.transfer` facility-transfers, and `r n.palliative` palliative discharge. Follow-up is ongoing for `r n.inhospital` in-hospital patients. Outcome is unreported for `r n.unknown`
+
+The observed mean duration for the number of days from hospital admission to outcome (death or discharge) is `r mean.adm.out` days, with a standard deviation (SD) of `r sd.adm.out`. These estimates are based on all cases which have complete records on length of hospital stay.
+
+The observed mean number of days from (first) symptom onset to hospital admission is `r mean.onst.adm` (SD: `r sd.onst.adm`).
+
+The symptoms on admission represent the policy for hospital admission and containment at that time plus, whatever the case definition was. As time passes for most countries these will change. The four most common symptoms at admission were fatigue and malaise alongside cough, history of fever and shortness of breath.
