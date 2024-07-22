@@ -1,3 +1,6 @@
+# Source the requirement.R file to install required packages
+source("requirement.R")
+
 library(shiny)
 
 port <- Sys.getenv('PORT')
