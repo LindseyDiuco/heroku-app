@@ -3,7 +3,7 @@
 # Example R code to install packages if not already installed
 #
 
-required_packages <- c(
+my_packages <- c(
   'shiny', 'shinydashboard', 'shinyWidgets',
   'dplyr', 'tidyverse', 'tidymodels', 'broom', 'magrittr',
   'viridis', 'UpSetR', 'shapviz', 'leaflet', 'survminer',
