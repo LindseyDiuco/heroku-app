@@ -3,7 +3,15 @@
 # Example R code to install packages if not already installed
 #
 
-my_packages = c("randomForest", "data.table")
+required_packages <- c(
+  'shiny', 'shinydashboard', 'shinyWidgets',
+  'dplyr', 'tidyverse', 'tidymodels', 'broom', 'magrittr',
+  'viridis', 'UpSetR', 'shapviz', 'leaflet', 'survminer',
+  'boot', 'survival', 'fitdistrplus', 'binom',
+  'forecast', 'TTR', 'lubridate',
+  'knitr', 'kableExtra', 'rmarkdown', 'tinytex',
+  'kernelshap', 'glue'
+)
 
 install_if_missing = function(p) {
   if (p %in% rownames(installed.packages()) == FALSE) {
